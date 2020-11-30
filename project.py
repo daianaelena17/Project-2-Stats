@@ -1,6 +1,7 @@
 import utils as util
 import pandas as pd
 import numpy as np
+import sys
 
 import matplotlib
 import matplotlib.pyplot as plt  # for plotting
@@ -11,40 +12,46 @@ from scipy import stats
 
 
 def getPrior(train):
-    sample = train.copy()
-    estim = sample['target'].sum() / sample['target'].size
-    var_list = sample['target'].tolist()
-    sum_var = 0
-    for i in var_list:
-      sum_var += (i - estim) ** 2
-    var = sum_var/sample['target'].size
-    var_sqrt = math.sqrt(var)
+  """
+  On fait la somme de tous les éléments et on la divise par le nombre d'éléments pour obtenir la moyenne.
+  On calcule la variance et  applique la formule pour les limites basse et haute. Estimation est la moyenne.
+  1,96 est la valeur de la table qui correspond a Z0 = 0.95/2 + 0.5
+  la valeur de retour est un dictionnaire
+  """
+  sample = train.copy()
+  estim = sample['target'].sum() / sample['target'].size
+  var_list = sample['target'].tolist()
+  sum_var = 0
+  for i in var_list:
+    sum_var += (i - estim) ** 2
+  var = sum_var/sample['target'].size
+  var_sqrt = math.sqrt(var)
 
-    min = estim - 1.96 * var_sqrt/math.sqrt(sample['target'].size)
-    max = estim + 1.96 * var_sqrt/math.sqrt(sample['target'].size)
-    x = {}
-    x['estimation'] = estim
-    x['min5pourcent'] = min
-    x['max5pourcent'] = max
-    return x
+  min = estim - 1.96 * var_sqrt/math.sqrt(sample['target'].size)
+  max = estim + 1.96 * var_sqrt/math.sqrt(sample['target'].size)
+  x = {}
+  x['estimation'] = estim
+  x['min5pourcent'] = min
+  x['max5pourcent'] = max
+  return x
 
 class APrioriClassifier(util.AbstractClassifier):
   def ___init__(self):
     pass
 
   def estimClass(self, attrs):
-    # x = dict(attrs)
-    # print(getPrior(x))
-    # print(attrs)
+    """
+    l'estimation de la question précédente est supérieure
+    à 0,5, nous pouvons donc supposer que la population entière a présenté la maladie cardiaque
+    """
     return 1
 
   def statsOnDF(self, df):
-    # VP : nombre d'individus avec target=1 et classe prévue=1
-    # VN : nombre d'individus avec target=0 et classe prévue=0
-    # FP : nombre d'individus avec target=0 et classe prévue=1
-    # FN : nombre d'individus avec target=1 et classe prévue=0
-    # précision
-    # rappel
+    """
+    nous parcourons la table et pour chaque tuple nous faisons une prévision et vérifions avec la
+    valeur réelle. Nous incrémentons la valeur correspondant dans le dictionnaire. On calcule la
+    précision et le rappel en utilisant la formule donnée.
+    """
     x = {}
     x['VP'] = 0
     x['VN'] = 0
@@ -71,6 +78,13 @@ class APrioriClassifier(util.AbstractClassifier):
 
 
 def P2D_l(df, attr):
+  """
+  On prend toutes les valeurs uniques dans la target et toutes les valeurs uniques dans l'attribut
+  en utilisant 2 sets. La clé du dictionnaire principal doit être target, donc pour chaque valeur on
+  crée un nouveau dictionnaire avec toutes les valeurs de s2 commes cles, avec les valeurs correspondantes
+  initialisées avec 0. On parcours le tableau et compte les apparitions de chaque attribut.
+  A la fin on divise par la taille du tableau pour trouver la probabilité de chacun.
+  """
   x = {}
 
   s1 = set()
@@ -99,6 +113,13 @@ def P2D_l(df, attr):
   return x
 
 def P2D_p(df,attr):
+  """
+  On prend toutes les valeurs uniques dans la target et toutes les valeurs uniques dans l'attribut
+  en utilisant 2 sets. La clé du dictionnaire principal doit être l'attribut, donc pour chaque valeur on
+  crée un nouveau dictionnaire avec toutes les valeurs de s1 commes cles, avec les valeurs correspondantes
+  initialisées avec 0. On parcours le tableau et compte les apparitions de chaque valeur de target.
+  A la fin on divise par la taille du tableau pour trouver la probabilité de chacun.
+  """
   x = {}
 
   s1 = set()
@@ -128,15 +149,21 @@ def P2D_p(df,attr):
 
 class ML2DClassifier(APrioriClassifier):
   def __init__(self, df, attr):
-    self.df = df
+    """
+    On calcule P2Dl un seul fois et
+    on le garde dans la mémoire
+    """
     self.attr = attr
     self.P2Dl = P2D_l(df, attr)
 
 
   def estimClass(self, attrs):
+    """
+    Les valeurs possible pour taget sont 1 ou 0. Donc on access les champs corespondants
+    à la valeur de l'attribut pour obtenir la probabilité. 
+    On compare les 2 valeurs et choisit le plus grand. En cas d'égalité choisir 0.
+    """
     attribut = attrs[self.attr]
-    # print(attribut)
-    # print(self.P2Dl)
     val0 = self.P2Dl[0][attribut]
     val1 = self.P2Dl[1][attribut]
 
@@ -148,15 +175,21 @@ class ML2DClassifier(APrioriClassifier):
 
 class MAP2DClassifier(APrioriClassifier):
   def __init__(self, df, attr):
-    self.df = df
+    """
+    On calcule P2Dl un seul fois et
+    on le garde dans la mémoire
+    """
     self.attr = attr
     self.P2Dp = P2D_p(df, attr)
 
 
   def estimClass(self, attrs):
+    """
+    Contrairement au cas précédent, les clés sont inversées, on accède donc aux éléments
+    nécessaires en basculant les index. On compare les 2 valeurs et choisit le plus grand.
+    En cas d'égalité choisir 0.
+    """
     attribut = attrs[self.attr]
-    # print(attribut)
-    # print(self.P2Dp)
     val0 = self.P2Dp[attribut][0]
     val1 = self.P2Dp[attribut][1]
 
@@ -166,13 +199,20 @@ class MAP2DClassifier(APrioriClassifier):
     return 0
 
 def nbParams(df, attributes=None):
+  """
+  Nous pouvons considérer ces dictionnaires imbriqués comme un arbre de recherche.
+  Les probabilités sont les feuilles. Leur nombre est le produit de toutes les dimensions
+  de chaque attribut. Nous devons également calculer la taille des noeuds intermédiaires.
+  La dimension globale est la somme des taille(feuilles) et des taille(noeuds)
+  Un dictionnaire vide a aussi une taille, mais dans ce cas nous le considérons 0.
+  """
 
   if attributes == None:
     nb_attr = len(list(df))
     attributes = list(df)
-    # print(nb_attr)
   else:
     nb_attr = len(attributes)
+
 
   list_dimensions = []
   for attribute in attributes:
@@ -182,17 +222,35 @@ def nbParams(df, attributes=None):
     list_dimensions.append(len(list(s)))
 
   total_attributes = np.prod(list_dimensions)
-  total_size = total_attributes * 8
-  # print(total_size)
+  total_size_feuilles = total_attributes * 8
+
+  size_noeuds = 0
+  dim_target = list_dimensions.pop(0) # eliminer dimensions de target
+  list_dimensions = reversed(list_dimensions) # l'arbre branche premierement par le dernier attribut
+  previous = 1
+  size_of_int = 4 # octets
+  
+  for dimension in list_dimensions:
+    size_noeuds += dimension * previous * size_of_int 
+    previous *= dimension
+  size_noeuds += previous * dim_target * size_of_int # the last row of nodes 
+
+
+  total_size = size_noeuds + total_size_feuilles
+
   print(f"Number of attributes is {nb_attr}. Dimension in octets is {total_size}.")
 
 
 def nbParamsIndep(df, attributes=None):
+  """
+  Chaque attribut est indépendant des autres. Nous pouvons les traiter séparément et à la
+  fin faire la somme des dimensions. Pour chaque valeur d'un attribut, nous avons une probabilité, 
+  donc, le nombre de clés de chaque table équivaut au nombre de probabilités.
+  """
 
   if attributes == None:
     nb_attr = len(list(df))
     attributes = list(df)
-    # print(nb_attr)
   else:
     nb_attr = len(attributes)
 
@@ -203,7 +261,83 @@ def nbParamsIndep(df, attributes=None):
       s.add(elem)
     list_dimensions.append(len(list(s)))
 
+  size_of_int = 4
+  size_of_float = 8
   total_attributes = np.sum(list_dimensions)
-  total_size = total_attributes * 8
-  # print(total_size)
+  total_size = total_attributes * size_of_float + total_attributes * size_of_int
+
   print(f"Number of attributes is {nb_attr}. Dimension in octets is {total_size}.")
+
+
+def drawNaiveBayes(df, attrs):
+  attributes = list(df)
+  attributes.remove(attrs)
+  dessin = attrs
+  for attr in attributes:
+    dessin += "->" + attr + ";" + attrs
+  return util.drawGraph(dessin)
+
+def nbParamsNaiveBayes(df, target, attributes=None):
+
+  if attributes == []:
+    nb_attr = 0
+    total_size = len(list(set(df[target]))) * 8
+    
+  else:
+    if attributes == None:
+      nb_attr = len(list(df))
+      attributes = list(df)
+
+    nb_attr = len(attributes)
+    list_dimensions = []
+
+    for attribute in attributes:
+      s = set()
+      for elem in df[attribute]:
+        s.add(elem)
+      list_dimensions.append(len(list(s)))
+
+    multiply_factor = len(list(set(df[target]))) * 8
+    total_attributes = np.sum(list_dimensions) * multiply_factor
+    total_size = total_attributes - multiply_factor
+
+  print(f"Number of attributes {nb_attr} with dimension in octets: {total_size}.")
+
+
+
+class MLNaiveBayesClassifier(APrioriClassifier):
+  def __init__(self, df):
+    self.df = df
+    self.attr = list(df)
+    self.attr.remove('target')
+    self.table_proba = {}
+    for i in self.attr:
+      self.table_proba[i] = list(set(self.df[i]))
+    # for each attribute we have a list of his possible values
+    
+    self.list_proba = []
+    for i in self.attr:
+      self.list_proba.append(P2D_l(self.df, i))
+    # for each attribute we have a corresponding element in the list which is his probability dictionary
+
+  def estimProbas(self, dico):
+    proba = {}
+    valeurs_target = list(set(self.df['target']))
+    for valeur in valeurs_target:
+      list_probas = [self.list_proba[i][valeur][dico[self.attr[i]]] \
+        if dico[self.attr[i]] in self.table_proba[self.attr[i]] \
+          else 0.0 for i in range(len(self.attr))]
+      proba[valeur] = np.prod(list_probas)
+      
+    return proba
+
+  def estimClass(self, dico):
+    proba = self.estimProbas(dico)
+    valeurs_target = list(set(self.df['target']))
+    max = 0
+    max_key = 0
+    for value in valeurs_target:
+      if proba[value] > max:
+        max = proba[value]
+        max_key = value
+    return max_key
